@@ -17,8 +17,8 @@
         const int screenWidth  = 60;
         const int screenHeight = 20;
         const int sleepTimeInitial = 100;
-        const int difficultyIncrease = 5;
-        const int yAxisSpeedDeltaMs = 30; // For adjusting y speed in relation to x speed. Example if collum vs row is not same distance.
+        const int difficultyIncrease = 1;
+        const int yAxisSpeedDeltaMs = 40; // For adjusting y speed in relation to x speed. Example if collum vs row is not same distance.
 
         static void Main()
         {
