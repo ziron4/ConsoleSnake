@@ -40,7 +40,7 @@ namespace ConsoleSnake
         }
 
         //private static Direction latestDirection = Direction.Right;
-        private static List<Player> players = new();
+        private static readonly List<Player> players = new();
 
         private const int initialSnakeX = 10;
         private const int initialSnakeY = 10;
@@ -64,6 +64,10 @@ namespace ConsoleSnake
 
             // ClientId
             clientId = $"{random.NextInt64()}";
+
+            // yourself
+            Player yourself = new Player(clientId, Direction.Right, 10, 5 + (int)(Int64.Parse(clientId) % 10));
+            players.Add(yourself);
 
             // Multiplayer Settings
             HandleCommandlineArguments(args);
@@ -105,8 +109,7 @@ namespace ConsoleSnake
 
             Console.Clear();
             Screen screen = new(screenWidth, screenHeight);
-            Player yourself = new Player(clientId, Direction.Right, 10, 5 + (int)(Int64.Parse(clientId) % 10));
-            players.Add(yourself);
+            
             Fruit fruit = new(random.Next(1, screenWidth - 1), random.Next(1, screenHeight - 1));
 
             // Main loop
@@ -142,9 +145,15 @@ namespace ConsoleSnake
                 if (   (fruit.x == yourself.snake.Head.x)
                     && (fruit.y == yourself.snake.Head.y))
                 {
-                    client?.Publish($"{multiplayerPrefix}/{clientId}", System.Text.Encoding.UTF8.GetBytes("Haps"));
-
-                    yourself.snake.Feed();
+                    if (client is not null)
+                    {
+                        client.Publish($"{multiplayerPrefix}/{clientId}", System.Text.Encoding.UTF8.GetBytes("Haps"));
+                    }
+                    else
+                    {
+                        yourself.snake.Feed();
+                    }
+                    
                     fruit = new(random.Next(1, screenWidth - 1), random.Next(1, screenHeight - 1));
                     sleepTime -= difficultyIncrease;
                 }
@@ -183,6 +192,17 @@ namespace ConsoleSnake
                 ShowEndGame("WTF, how did you get here?!");
             }
 
+            Console.WriteLine("Stats:");
+            Console.WriteLine($"Your snake length: {yourself.snake.positions.Count}");
+            foreach (Player player in players)
+            {
+                if (!player.clientId.Equals(yourself.clientId) )
+                {
+                    Console.WriteLine($"client: {player.clientId} snake length: {player.snake.positions.Count}");
+                }
+            }
+
+            client?.Disconnect();
         }
 
         private static void Client_MqttMsgPublishReceived(object sender, uPLibrary.Networking.M2Mqtt.Messages.MqttMsgPublishEventArgs e)
@@ -195,51 +215,47 @@ namespace ConsoleSnake
 
                 Player? player = null;
                 // Register player
-                if (playerClientId != clientId)
+                if (!players.Any(player => player.clientId == playerClientId))
                 {
-                    if (!players.Any(player => player.clientId == playerClientId))
-                    {
-                        int initialY = 5 + (int)(Int64.Parse(playerClientId) % 10);
-                        player = new(playerClientId, Direction.Right, 10, initialY);
-                        players.Add(player);
+                    int initialY = 5 + (int)(Int64.Parse(playerClientId) % 10);
+                    player = new(playerClientId, Direction.Right, 10, initialY);
+                    players.Add(player);
 
-                        Console.WriteLine($"ClientId: {player.clientId} connected");
-                    }
-                    else
-                    {
-                        player = players.First(player => player.clientId == playerClientId);
-                    }
+                    Console.WriteLine($"ClientId: {player.clientId} connected");
+                }
+                else
+                {
+                    player = players.First(player => player.clientId == playerClientId);
+                }
+                
 
-                    if (player is not null)
+                if (player is not null)
+                {
+                    // Move player
+                    if (Enum.TryParse(cmd, out Direction newDirection))
                     {
-                        if (player.clientId != clientId)
+                        if (!IsOpposite(player.direction, newDirection))
                         {
-                            // Move player
-                            if (Enum.TryParse(cmd, out Direction newDirection))
-                            {
-                                if (!IsOpposite(player.direction, newDirection))
-                                {
-                                    player.direction = newDirection;
-                                }
-                            }
-
-                            // Feed his snake
-                            if (cmd.Equals("Haps"))
-                            {
-                                player.snake.Feed();
-                            }
+                            player.direction = newDirection;
                         }
+                    }
+
+                    // Feed his snake
+                    if (cmd.Equals("Haps"))
+                    {
+                        player.snake.Feed();
                     }
                 }
                 
+                // Start the game
                 if (cmd.Equals("Start"))
                 {
                     isGameStarted = true;
                 }
             }
-            catch(Exception)
+            catch(Exception ex)
             {
-                // nej
+                Console.WriteLine($"Exception caught in Client_MqttMsgPublishReceived: {ex.Message}, Stacktrace: {ex.StackTrace}");
             }
         }
 
@@ -311,11 +327,13 @@ namespace ConsoleSnake
                 Player yourself = players.First(player => player.clientId == clientId);
                 if (!IsOpposite(yourself.direction, direction))
                 {
-                    yourself.direction = direction;
-
                     if (client is not null && client.IsConnected)
                     {
                         client.Publish($"{multiplayerPrefix}/{clientId}", System.Text.Encoding.UTF8.GetBytes($"{direction}"));
+                    }
+                    else
+                    {
+                        yourself.direction = direction;
                     }
                 }
             }
